@@ -849,7 +849,7 @@ def calculate_client_series(prices, rebalances, benchmark, entry_date, valuation
 
 def build_equal_weight_cumulative_rebalances(rebalances):
     """
-    Pack equal weight:
+    Pack equal weight acumulado:
     - Arranca con los tickers del primer rebalanceo.
     - En cada rebalanceo real, suma los tickers nuevos que aparecieron.
     - Repondera todo el universo acumulado en partes iguales.
@@ -866,12 +866,85 @@ def build_equal_weight_cumulative_rebalances(rebalances):
         ew = {t: 1 / n for t in universe}
 
         out.append({
-            "name": f"{r['name']} Equal Weight",
+            "name": f"{r['name']} EW Acumulado",
             "start": r["start"],
             "weights": ew,
         })
 
     return out
+
+
+def build_equal_weight_quarterly_rebalances(rebalances):
+    """
+    Pack equal weight por trimestre:
+    - En cada trimestre usa solo los tickers del pack real de ese trimestre.
+    - Los pondera igual al inicio del rebalanceo.
+    - Entre rebalanceos, las cantidades quedan fijas.
+    """
+    out = []
+    for r in rebalances:
+        tickers = list(r["weights"].keys())
+        n = len(tickers)
+        weights = {t: 1 / n for t in tickers}
+        out.append({
+            "name": f"{r['name']} EW Trimestral",
+            "start": r["start"],
+            "weights": weights,
+        })
+    return out
+
+
+def build_lagged_rebalances(rebalances):
+    """
+    Pack lagueado:
+    - En cada fecha de rebalanceo invierte con la composición del trimestre anterior.
+    - Por eso la serie arranca recién en el segundo rebalanceo real.
+    - Ejemplo: el 2Q25 usa pesos/tenencias de 1Q25.
+    """
+    out = []
+    for i in range(1, len(rebalances)):
+        current = rebalances[i]
+        previous = rebalances[i - 1]
+        out.append({
+            "name": f"{current['name']} lagueado ({previous['name']})",
+            "start": current["start"],
+            "weights": previous["weights"].copy(),
+        })
+    return out
+
+
+def get_fun_strategy_rebalances(strategy_name):
+    if strategy_name == "Pack equal weight acumulado":
+        return build_equal_weight_cumulative_rebalances(REBALANCES), (
+            "Pack equal weight acumulado",
+            """
+            **Metodología:** se usan todas las compañías que alguna vez formaron parte del pack hasta cada fecha de rebalanceo.
+            En cada rebalanceo real, se suman los tickers nuevos al universo acumulado y se pondera todo en partes iguales.
+            Entre rebalanceos, las cantidades quedan fijas.
+            """
+        )
+
+    if strategy_name == "Pack equal weight por trimestre":
+        return build_equal_weight_quarterly_rebalances(REBALANCES), (
+            "Pack equal weight por trimestre",
+            """
+            **Metodología:** en cada trimestre se toman solo las acciones del pack real de ese período, pero todas con la misma ponderación.
+            Sirve para aislar la **selección de acciones** de la decisión de pesos.
+            Entre rebalanceos, las cantidades quedan fijas.
+            """
+        )
+
+    if strategy_name == "Pack lagueado":
+        return build_lagged_rebalances(REBALANCES), (
+            "Pack lagueado",
+            """
+            **Metodología:** en cada rebalanceo se invierte usando la composición del trimestre anterior.
+            Por construcción, el análisis comienza en el segundo rebalanceo real (8/4/2025), porque antes no existe una cartera previa.
+            Sirve para medir si las ideas funcionaban mejor o peor con un trimestre de demora.
+            """
+        )
+
+    raise ValueError(f"Estrategia no reconocida: {strategy_name}")
 
 
 def calc_metrics(pack_series, bench_series, rf_annual=0.0):
@@ -1132,7 +1205,7 @@ if page == "Fun":
     render_brand_header(
         "Fun · Estrategias alternativas",
         "Pruebas comparativas sobre el universo del Quant Selection para entender sensibilidad, construcción y concentración.",
-        ["Equal weight", "Universo acumulado", "Comparativo"]
+        ["Equal weight", "Lagueado", "Comparativo"]
     )
 
     with st.sidebar:
@@ -1140,24 +1213,33 @@ if page == "Fun":
 
         strategy = st.selectbox(
             "Estrategia",
-            ["Pack equal weight"],
+            [
+                "Pack equal weight acumulado",
+                "Pack equal weight por trimestre",
+                "Pack lagueado",
+            ],
+            index=1,
+            key="fun_strategy_selector_v181",
         )
 
         amount_fun_text = st.text_input("Capital base (USD)", value="10000", key="fun_amount")
         amount_fun = parse_number(amount_fun_text, 10000.0)
 
+        default_fun_start = date(2025, 4, 8) if strategy == "Pack lagueado" else date(2025, 1, 8)
+        min_fun_start = date(2025, 4, 8) if strategy == "Pack lagueado" else date(2025, 1, 8)
+
         start_fun = st.date_input(
             "Fecha de inicio",
-            value=date(2025, 1, 8),
-            min_value=date(2025, 1, 8),
-            key="fun_start",
+            value=default_fun_start,
+            min_value=min_fun_start,
+            key=f"fun_start_{strategy}",
         )
 
         valuation_fun = st.date_input(
             "Fecha de valuación",
             value=date.today(),
-            min_value=date(2025, 1, 8),
-            key="fun_valuation",
+            min_value=min_fun_start,
+            key=f"fun_valuation_{strategy}",
         )
 
         benchmark_fun = st.text_input("Benchmark Fun", value="SPY").upper().strip()
@@ -1172,7 +1254,14 @@ if page == "Fun":
         )
 
     try:
-        ew_rebalances = build_equal_weight_cumulative_rebalances(REBALANCES)
+        strategy_rebalances, (strategy_title, strategy_description) = get_fun_strategy_rebalances(strategy)
+
+        effective_start_fun = pd.Timestamp(start_fun)
+        if strategy == "Pack lagueado":
+            first_lag_start = pd.Timestamp(strategy_rebalances[0]["start"])
+            if effective_start_fun < first_lag_start:
+                effective_start_fun = first_lag_start
+                st.info(f"El Pack lagueado comienza en {first_lag_start.date()}, porque necesita un trimestre previo.")
 
         required_tickers = sorted(set(all_pack_tickers(REBALANCES) + [benchmark_fun]))
         download_start = (pd.Timestamp(REBALANCES[0]["start"]) - pd.Timedelta(days=10)).strftime("%Y-%m-%d")
@@ -1184,50 +1273,44 @@ if page == "Fun":
             prices=prices,
             rebalances=REBALANCES,
             benchmark=benchmark_fun,
-            entry_date=pd.Timestamp(start_fun),
+            entry_date=effective_start_fun,
             valuation_date=pd.Timestamp(valuation_fun),
             amount=float(amount_fun),
         )
 
-        ew_result = calculate_client_series(
+        strategy_result = calculate_client_series(
             prices=prices,
-            rebalances=ew_rebalances,
+            rebalances=strategy_rebalances,
             benchmark=benchmark_fun,
-            entry_date=pd.Timestamp(start_fun),
+            entry_date=effective_start_fun,
             valuation_date=pd.Timestamp(valuation_fun),
             amount=float(amount_fun),
         )
 
         real_series = real_result["pack_series"].rename("Quant Selection real")
-        ew_series = ew_result["pack_series"].rename("Pack equal weight")
+        strategy_series = strategy_result["pack_series"].rename(strategy_title)
         bench_series = real_result["benchmark_series"].rename(benchmark_fun)
 
-        aligned_index = real_series.index.intersection(ew_series.index).intersection(bench_series.index)
+        aligned_index = real_series.index.intersection(strategy_series.index).intersection(bench_series.index)
         real_series = real_series.loc[aligned_index]
-        ew_series = ew_series.loc[aligned_index]
+        strategy_series = strategy_series.loc[aligned_index]
         bench_series = bench_series.loc[aligned_index]
 
-        st.subheader("Pack equal weight")
-        st.markdown(
-            """
-            **Metodología:** se usan todas las compañías que alguna vez formaron parte del pack hasta cada fecha de rebalanceo.
-            En cada rebalanceo real, se suman los tickers nuevos al universo acumulado y se pondera todo en partes iguales.
-            Entre rebalanceos, las cantidades quedan fijas.
-            """
-        )
+        st.subheader(strategy_title)
+        st.markdown(strategy_description)
 
         col1, col2, col3 = st.columns(3)
-        ew_ret = ew_series.iloc[-1] / ew_series.iloc[0] - 1
+        strategy_ret = strategy_series.iloc[-1] / strategy_series.iloc[0] - 1
         real_ret = real_series.iloc[-1] / real_series.iloc[0] - 1
         bench_ret = bench_series.iloc[-1] / bench_series.iloc[0] - 1
 
-        col1.metric("Equal weight", fmt_usd(ew_series.iloc[-1]), f"{ew_ret*100:.2f}%")
+        col1.metric(strategy_title, fmt_usd(strategy_series.iloc[-1]), f"{strategy_ret*100:.2f}%")
         col2.metric("Pack real", fmt_usd(real_series.iloc[-1]), f"{real_ret*100:.2f}%")
         col3.metric(benchmark_fun, fmt_usd(bench_series.iloc[-1]), f"{bench_ret*100:.2f}%")
 
         st.subheader("Evolución base 100")
         comp_df = pd.DataFrame({
-            "Pack equal weight": ew_series / ew_series.iloc[0] * 100,
+            strategy_title: strategy_series / strategy_series.iloc[0] * 100,
             "Quant Selection real": real_series / real_series.iloc[0] * 100,
             benchmark_fun: bench_series / bench_series.iloc[0] * 100,
         })
@@ -1244,7 +1327,7 @@ if page == "Fun":
         st.subheader("Métricas comparativas")
         comparison = build_comparison_table(
             {
-                "Pack equal weight": ew_series,
+                strategy_title: strategy_series,
                 "Quant Selection real": real_series,
                 benchmark_fun: bench_series,
             },
@@ -1254,19 +1337,19 @@ if page == "Fun":
             "Retorno acumulado", "Retorno anualizado", "Volatilidad anualizada", "Sharpe", "Máx. drawdown", "Valor final"
         ])
 
-        st.subheader("Universo acumulado por rebalanceo")
+        st.subheader("Composición de la estrategia por rebalanceo")
         rows = []
-        for r in ew_rebalances:
+        for r in strategy_rebalances:
             rows.append({
-                "Rebalanceo": r["name"].replace(" Equal Weight", ""),
+                "Rebalanceo": r["name"],
                 "Inicio": r["start"],
                 "Cantidad de acciones": len(r["weights"]),
-                "Universo": ", ".join(r["weights"].keys()),
+                "Universo / composición": ", ".join([f"{t} {w*100:.1f}%" for t, w in r["weights"].items()]),
             })
         render_html_table(pd.DataFrame(rows))
 
-        st.subheader("Tenencia actual equal weight")
-        holdings = ew_result["holdings"].copy()
+        st.subheader(f"Tenencia actual · {strategy_title}")
+        holdings = strategy_result["holdings"].copy()
         holdings_display = holdings.copy()
         if "Unidades estimadas" in holdings_display.columns:
             holdings_display["Unidades estimadas"] = holdings_display["Unidades estimadas"].map(lambda x: fmt_num(x, 4))
@@ -1280,14 +1363,14 @@ if page == "Fun":
         st.subheader("Descargas")
         export_fun = pd.DataFrame({
             "Fecha": aligned_index,
-            "Pack equal weight": ew_series.values,
+            strategy_title: strategy_series.values,
             "Quant Selection real": real_series.values,
             benchmark_fun: bench_series.values,
         })
         st.download_button(
             "Descargar comparación CSV",
             data=export_fun.to_csv(index=False).encode("utf-8"),
-            file_name="quant_selection_fun_equal_weight.csv",
+            file_name=f"quant_selection_fun_{strategy.lower().replace(' ', '_')}.csv",
             mime="text/csv",
         )
 

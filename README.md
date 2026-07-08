@@ -132,17 +132,12 @@ Cambio visual:
 - Se agrega una breve nota metodológica sobre composición objetivo y cantidades fijas entre rebalanceos.
 
 
-## v1.8 – Nuevas estrategias Fun
+## v1.8.1 – Hotfix Fun selector
 
-Se agregan dos estrategias en la sección **Fun**:
-
-### Pack equal weight por trimestre
-- En cada rebalanceo usa solo los tickers del pack real de ese trimestre.
-- Los pondera en partes iguales.
-- Sirve para aislar la selección de acciones de la decisión de ponderaciones.
-- Entre rebalanceos, las cantidades permanecen fijas.
-
-### Pack lagueado
-- En cada rebalanceo invierte con la composición del trimestre anterior.
-- El análisis comienza el 8/4/2025 porque necesita una cartera previa.
-- Sirve para evaluar si las ideas del pack funcionaban mejor o peor con un trimestre de demora.
+Corrección:
+- La versión v1.8 anterior no había reemplazado correctamente el selector de la sección Fun.
+- Ahora el selector muestra:
+  - Pack equal weight acumulado
+  - Pack equal weight por trimestre
+  - Pack lagueado
+- Se agrega una key nueva al selector para evitar caché de estado de Streamlit.
