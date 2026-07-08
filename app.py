@@ -467,11 +467,29 @@ def build_effective_rebalances(prices, rebalances):
 
 
 def calculate_client_series(prices, rebalances, benchmark, entry_date, valuation_date, amount):
+    """
+    Motor de cálculo v1.5.
+
+    Cambia el enfoque anterior basado en "acciones = dólares / precio" por un
+    motor basado en retornos diarios y sleeves de valor por ticker.
+
+    Por qué:
+    - Con precios crudos, ambos métodos son equivalentes.
+    - Con precios ajustados, usar el precio ajustado como si fuera un precio
+      transable para calcular cantidad de acciones puede distorsionar la cartera
+      en rebalanceos. El método por retornos usa solo ratios de precio, que es
+      lo correcto para una aproximación de total return.
+    - Respeta la regla original: pesos se fijan solo en rebalanceos y luego
+      las cantidades/sleeves quedan fijas hasta el siguiente rebalanceo.
+    """
     entry_eff = first_trading_on_or_after(prices.index, entry_date)
     valuation_eff = last_trading_on_or_before(prices.index, valuation_date)
 
     if entry_eff > valuation_eff:
         raise ValueError("La fecha de entrada efectiva es posterior a la fecha de valuación.")
+
+    if benchmark not in prices.columns:
+        raise ValueError(f"No encontré el benchmark {benchmark}.")
 
     effective_rebalances = build_effective_rebalances(prices, rebalances)
     rb_dates = [r["effective_start"] for r in effective_rebalances]
@@ -480,27 +498,39 @@ def calculate_client_series(prices, rebalances, benchmark, entry_date, valuation
     if current_idx is None:
         raise ValueError("La fecha de entrada es anterior al primer rebalanceo efectivo.")
 
+    # Retornos diarios: ffill ya se aplicó al descargar precios.
+    returns = prices.pct_change().fillna(0.0)
+
     current_rb = effective_rebalances[current_idx]
     weights = current_rb["weights"]
     tickers = [t for t in weights if t in prices.columns]
-
-    if not tickers:
-        raise ValueError("No hay tickers válidos para la composición vigente.")
 
     missing = [t for t in weights if t not in prices.columns]
     if missing:
         st.warning(f"Tickers sin precio y excluidos: {', '.join(missing)}")
 
-    # Regla clave:
-    # En el rebalanceo se define una cantidad modelo de acciones con capital base 1.
-    # Si el cliente entra después, compra esa canasta ya drifted, escalada a su monto.
-    reb_price_date = current_rb["effective_start"]
-    model_weights = pd.Series(weights)[tickers]
-    model_weights = model_weights / model_weights.sum()
-    model_shares = model_weights / prices.loc[reb_price_date, tickers]
+    if not tickers:
+        raise ValueError("No hay tickers válidos para la composición vigente.")
 
-    model_value_entry = float((model_shares * prices.loc[entry_eff, tickers]).sum())
-    holdings = model_shares * (amount / model_value_entry)
+    # 1) Construimos una cartera modelo con capital base 1 en el rebalanceo vigente.
+    w = pd.Series(weights)[tickers]
+    w = w / w.sum()
+    model_sleeves = w.astype(float).copy()
+
+    # 2) Si el cliente entra a mitad de trimestre, dejamos correr esa canasta
+    # desde el rebalanceo hasta la fecha de entrada. Así compra la canasta ya
+    # drifted, no las ponderaciones originales.
+    rb_start = current_rb["effective_start"]
+    pre_entry_dates = returns.loc[(returns.index > rb_start) & (returns.index <= entry_eff)].index
+    for d in pre_entry_dates:
+        model_sleeves = model_sleeves * (1 + returns.loc[d, model_sleeves.index])
+
+    model_value_entry = float(model_sleeves.sum())
+    if model_value_entry == 0 or np.isnan(model_value_entry):
+        raise ValueError("No se pudo valuar la canasta modelo en la fecha de entrada.")
+
+    # 3) Escalamos esa canasta drifted al monto del cliente.
+    sleeves = model_sleeves * (amount / model_value_entry)
 
     future_rebalances = {
         r["effective_start"]: r
@@ -515,50 +545,55 @@ def calculate_client_series(prices, rebalances, benchmark, entry_date, valuation
     values = []
     pnl_by_ticker = {}
 
-    prev_date = dates[0]
-    prev_prices = prices.loc[prev_date]
-    value = float((holdings * prev_prices[holdings.index]).sum())
-    values.append((prev_date, value))
+    # Valor al cierre de entrada.
+    value = float(sleeves.sum())
+    values.append((dates[0], value))
 
     for d in dates[1:]:
-        cur_prices = prices.loc[d]
+        # P&L del día con sleeves fijos del día anterior.
+        daily_rets = returns.loc[d, sleeves.index]
+        pnl_vector = sleeves * daily_rets
 
-        for t in holdings.index:
-            pnl = float(holdings[t] * (cur_prices[t] - prev_prices[t]))
-            pnl_by_ticker[t] = pnl_by_ticker.get(t, 0.0) + pnl
+        for t, pnl in pnl_vector.items():
+            pnl_by_ticker[t] = pnl_by_ticker.get(t, 0.0) + float(pnl)
 
-        value = float((holdings * cur_prices[holdings.index]).sum())
+        sleeves = sleeves + pnl_vector
+        value = float(sleeves.sum())
         values.append((d, value))
 
-        # Rebalanceo al cierre: afecta el tramo siguiente.
+        # Rebalanceo al cierre del día: afecta al tramo siguiente.
         if d in future_rebalances:
             rb = future_rebalances[d]
             rb_weights = rb["weights"]
             rb_tickers = [t for t in rb_weights if t in prices.columns]
-            w = pd.Series(rb_weights)[rb_tickers]
-            w = w / w.sum()
-            holdings = (value * w / cur_prices[rb_tickers]).astype(float)
 
-        prev_date = d
-        prev_prices = cur_prices
+            if not rb_tickers:
+                raise ValueError(f"No hay tickers válidos para el rebalanceo {rb['name']}.")
+
+            new_w = pd.Series(rb_weights)[rb_tickers]
+            new_w = new_w / new_w.sum()
+            sleeves = value * new_w
 
     pack_series = pd.Series(dict(values)).sort_index()
     pack_series.name = "Quant Selection"
 
-    if benchmark not in prices.columns:
-        raise ValueError(f"No encontré el benchmark {benchmark}.")
-    bench = prices.loc[pack_series.index, benchmark]
-    benchmark_series = amount * bench / bench.iloc[0]
-    benchmark_series.name = benchmark
+    # Benchmark: inversión buy & hold desde la entrada.
+    bench_prices = prices.loc[pack_series.index, benchmark]
+    bench_series = amount * bench_prices / bench_prices.iloc[0]
+    bench_series.name = benchmark
 
-    final_prices = prices.loc[valuation_eff, holdings.index]
-    final_values = holdings * final_prices
+    # Tenencia actual: valor por sleeve. Para precios ajustados, la columna
+    # "Unidades estimadas" es una unidad sintética; para precios crudos, se
+    # aproxima a acciones.
+    final_prices = prices.loc[valuation_eff, sleeves.index]
+    units = sleeves / final_prices
+
     holdings_df = pd.DataFrame({
-        "Ticker": holdings.index,
-        "Acciones": holdings.values,
+        "Ticker": sleeves.index,
+        "Unidades estimadas": units.values,
         "Precio": final_prices.values,
-        "Valor": final_values.values,
-        "Peso actual": final_values.values / final_values.sum(),
+        "Valor": sleeves.values,
+        "Peso actual": sleeves.values / sleeves.sum(),
     }).sort_values("Valor", ascending=False)
 
     attribution_df = pd.DataFrame({
@@ -573,7 +608,7 @@ def calculate_client_series(prices, rebalances, benchmark, entry_date, valuation
         "entry_effective": entry_eff,
         "valuation_effective": valuation_eff,
         "pack_series": pack_series,
-        "benchmark_series": benchmark_series,
+        "benchmark_series": bench_series,
         "holdings": holdings_df,
         "attribution": attribution_df,
     }
@@ -733,7 +768,7 @@ if page == "Calculadora por cliente":
         st.header("Parámetros")
 
         amount = st.number_input("Monto invertido (USD)", min_value=100.0, value=10000.0, step=1000.0, format="%.0f")
-        entry = st.date_input("Fecha de entrada", value=date(2026, 1, 5), min_value=date(2025, 1, 8))
+        entry = st.date_input("Fecha de entrada", value=date(2025, 1, 8), min_value=date(2025, 1, 8))
         valuation = st.date_input("Fecha de valuación", value=date.today(), min_value=date(2025, 1, 8))
         benchmark = st.text_input("Benchmark", value="SPY").upper().strip()
 
@@ -744,8 +779,8 @@ if page == "Calculadora por cliente":
 
         adjusted = st.checkbox(
             "Usar precios ajustados (aprox. total return)",
-            value=True,
-            help="Sirve como aproximación a retorno total. Para producción conviene validar con fuente profesional.",
+            value=False,
+            help="Desactivado usa Close crudo (price return, comparable con Excel de precios). Activado usa precios ajustados como aproximación a total return.",
         )
 
         st.divider()
@@ -917,7 +952,7 @@ if page == "Fun":
 
         adjusted_fun = st.checkbox(
             "Usar precios ajustados",
-            value=True,
+            value=False,
             key="fun_adjusted",
         )
 

@@ -100,3 +100,13 @@ Corrección:
 - `style_plotly()` ahora aplica `line=dict(width=2.4)` solo a trazas `scatter`.
 - Esto evita el error de Plotly cuando el gráfico es de barras: `Invalid property specified for object of type plotly.graph_objs.Bar: 'line'`.
 - Se mantiene el fix visual de v1.4.
+
+
+## v1.5 – Motor por retornos
+
+Corrección metodológica:
+- La calculadora ahora usa un motor basado en retornos diarios por ticker y "sleeves" de valor.
+- Esto evita usar precios ajustados como si fueran precios transables para calcular acciones, lo que podía distorsionar mucho la cartera al rebalancear.
+- Con precios crudos, el resultado es equivalente al método por cantidad de acciones.
+- Con precios ajustados, el resultado es una aproximación más consistente de total return.
+- La opción de precios ajustados queda desactivada por defecto para que el resultado sea comparable con Excel de precios de cierre.
