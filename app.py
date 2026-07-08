@@ -255,6 +255,115 @@ hr {
     [data-testid="stMetricValue"] { font-size: 1.35rem !important; }
 }
 
+
+/* Tablas HTML blancas */
+.white-table-wrap {
+    background: #FFFFFF;
+    border: 1px solid #D8E1EE;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(9, 32, 68, 0.07);
+    margin-bottom: 18px;
+}
+
+.white-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #FFFFFF;
+    color: #162033;
+    font-size: 0.92rem;
+}
+
+.white-table th {
+    background: #F3F7FC;
+    color: #071A33;
+    font-weight: 750;
+    padding: 10px 12px;
+    border-bottom: 1px solid #D8E1EE;
+    text-align: left;
+}
+
+.white-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #E8EEF7;
+    color: #162033;
+}
+
+.white-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.white-table tbody tr:nth-child(even) {
+    background: #FAFCFF;
+}
+
+.white-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Tabla de rebalanceos estilo matriz */
+.rebalance-wrap {
+    margin-top: 22px;
+}
+
+.rebalance-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #FFFFFF;
+    color: #071A33;
+    font-size: 0.88rem;
+    border: 1px solid #0C4A67;
+    box-shadow: 0 8px 24px rgba(9, 32, 68, 0.06);
+}
+
+.rebalance-table th.quarter {
+    background: #0B4B63;
+    color: #FFFFFF;
+    text-align: center;
+    font-weight: 800;
+    padding: 7px 6px;
+    border: 1px solid #07384B;
+}
+
+.rebalance-table th.sub {
+    background: #DFF4FF;
+    color: #071A33;
+    text-align: center;
+    font-weight: 700;
+    padding: 6px;
+    border: 1px solid #8BC9DF;
+}
+
+.rebalance-table td {
+    padding: 6px 8px;
+    border: 1px solid #8BC9DF;
+    text-align: center;
+}
+
+.rebalance-table tbody tr:nth-child(odd) td {
+    background: #BFE9FA;
+}
+
+.rebalance-table tbody tr:nth-child(even) td {
+    background: #E8F8FF;
+}
+
+.rebalance-table .ticker {
+    font-weight: 650;
+}
+
+/* Refuerzo de modo claro para elementos de tablas nativas */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+    background: #FFFFFF !important;
+    color: #162033 !important;
+}
+
+/* Ocultar controles +/- de number_input si algún navegador los muestra */
+[data-testid="stNumberInput"] button {
+    display: none !important;
+}
+
 </style>
 """
 
@@ -295,7 +404,7 @@ def style_plotly(fig):
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
         font=dict(color="#162033", size=13),
-        title=dict(font=dict(color="#071A33", size=20)),
+        title=dict(text="", font=dict(color="#071A33", size=20)),
         legend=dict(
             bgcolor="rgba(255,255,255,0.92)",
             bordercolor="#D8E1EE",
@@ -325,6 +434,82 @@ def style_plotly(fig):
     # Las barras no la aceptan y rompen con: Invalid property for Bar: 'line'.
     fig.update_traces(line=dict(width=2.4), selector=dict(type="scatter"))
     return fig
+
+def parse_number(text, default=0.0):
+    """Parsea números escritos en formato español o inglés."""
+    if text is None:
+        return default
+    s = str(text).strip().replace("USD", "").replace("$", "").replace(" ", "")
+    if s == "":
+        return default
+    # Si tiene coma decimal y punto de miles: 1.000.000,50
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    # Si solo tiene coma, asumir coma decimal.
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return default
+
+def fmt_pct(value, decimals=2):
+    if pd.isna(value):
+        return ""
+    return f"{value*100:.{decimals}f}%"
+
+def fmt_num(value, decimals=2):
+    if pd.isna(value):
+        return ""
+    return f"{value:,.{decimals}f}"
+
+def render_html_table(df, numeric_cols=None):
+    """Renderiza DataFrame como tabla HTML blanca para evitar modo oscuro."""
+    numeric_cols = set(numeric_cols or [])
+    html = ['<div class="white-table-wrap"><table class="white-table">']
+    html.append("<thead><tr>")
+    for col in df.columns:
+        html.append(f"<th>{col}</th>")
+    html.append("</tr></thead><tbody>")
+    for _, row in df.iterrows():
+        html.append("<tr>")
+        for col in df.columns:
+            cls = "num" if col in numeric_cols else ""
+            val = "" if pd.isna(row[col]) else row[col]
+            html.append(f'<td class="{cls}">{val}</td>')
+        html.append("</tr>")
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+def rebalance_matrix_html(rebalances):
+    max_rows = max(len(r["weights"]) for r in rebalances)
+    html = ['<div class="rebalance-wrap"><div class="white-table-wrap"><table class="rebalance-table">']
+    html.append("<thead><tr>")
+    for r in rebalances:
+        html.append(f'<th class="quarter" colspan="2">{r["name"]} · {r["start"]}</th>')
+    html.append("</tr><tr>")
+    for _ in rebalances:
+        html.append('<th class="sub">Ticker</th><th class="sub">Pond.</th>')
+    html.append("</tr></thead><tbody>")
+
+    items_by_q = [list(r["weights"].items()) for r in rebalances]
+    for i in range(max_rows):
+        html.append("<tr>")
+        for items in items_by_q:
+            if i < len(items):
+                t, w = items[i]
+                pct = f"{w*100:.1f}%".replace(".", ",")
+                html.append(f'<td class="ticker">{t}</td><td>{pct}</td>')
+            else:
+                html.append("<td>-</td><td>-</td>")
+        html.append("</tr>")
+    html.append("</tbody></table></div></div>")
+    return "".join(html)
+
+def render_rebalances_section():
+    st.subheader("Rebalanceos cargados")
+    st.markdown(rebalance_matrix_html(REBALANCES), unsafe_allow_html=True)
+
 
 # ============================================================
 # Configuración del pack
@@ -767,32 +952,19 @@ if page == "Calculadora por cliente":
     with st.sidebar:
         st.header("Parámetros")
 
-        amount = st.number_input("Monto invertido (USD)", min_value=100.0, value=10000.0, step=1000.0, format="%.0f")
+        amount_text = st.text_input("Monto invertido (USD)", value="10000")
+        amount = parse_number(amount_text, 10000.0)
         entry = st.date_input("Fecha de entrada", value=date(2025, 1, 8), min_value=date(2025, 1, 8))
         valuation = st.date_input("Fecha de valuación", value=date.today(), min_value=date(2025, 1, 8))
         benchmark = st.text_input("Benchmark", value="SPY").upper().strip()
 
-        rf_annual = st.number_input(
-            "Tasa libre de riesgo anual para Sharpe",
-            min_value=0.0, max_value=0.30, value=0.0, step=0.005, format="%.3f",
-        )
+        rf_text = st.text_input("Tasa libre de riesgo anual para Sharpe", value="0.000")
+        rf_annual = max(0.0, parse_number(rf_text, 0.0))
 
         adjusted = st.checkbox(
             "Usar precios ajustados (aprox. total return)",
             value=False,
             help="Desactivado usa Close crudo (price return, comparable con Excel de precios). Activado usa precios ajustados como aproximación a total return.",
-        )
-
-        st.divider()
-        st.write("**Rebalanceos cargados**")
-        st.dataframe(
-            pd.DataFrame({
-                "Trimestre": [r["name"] for r in REBALANCES],
-                "Inicio": [r["start"] for r in REBALANCES],
-                "Tickers": [", ".join(r["weights"].keys()) for r in REBALANCES],
-            }),
-            hide_index=True,
-            use_container_width=True,
         )
 
     try:
@@ -843,8 +1015,24 @@ if page == "Calculadora por cliente":
         fig = style_plotly(fig)
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Métricas")
-        st.dataframe(format_metrics(metrics), hide_index=True, use_container_width=True)
+        metrics_col, holdings_col = st.columns([1.05, 0.95])
+
+        with metrics_col:
+            st.subheader("Métricas")
+            render_html_table(format_metrics(metrics), numeric_cols=["Pack", "Benchmark"])
+
+        with holdings_col:
+            st.subheader("Tenencia actual")
+            holdings = result["holdings"].copy()
+            holdings_display = holdings.copy()
+            if "Unidades estimadas" in holdings_display.columns:
+                holdings_display["Unidades estimadas"] = holdings_display["Unidades estimadas"].map(lambda x: fmt_num(x, 4))
+            elif "Acciones" in holdings_display.columns:
+                holdings_display["Acciones"] = holdings_display["Acciones"].map(lambda x: fmt_num(x, 4))
+            holdings_display["Precio"] = holdings_display["Precio"].map(lambda x: fmt_num(x, 2))
+            holdings_display["Valor"] = holdings_display["Valor"].map(lambda x: fmt_usd(x))
+            holdings_display["Peso actual"] = holdings_display["Peso actual"].map(lambda x: fmt_pct(x, 2))
+            render_html_table(holdings_display, numeric_cols=[c for c in holdings_display.columns if c != "Ticker"])
 
         st.subheader("Atribución por acción")
         attr = result["attribution"].copy()
@@ -859,21 +1047,11 @@ if page == "Calculadora por cliente":
                 labels={"Aporte sobre capital inicial (%)": "Aporte (pp)"},
             )
             fig_attr = style_plotly(fig_attr)
+            fig_attr.update_layout(title_text="")
             fig_attr.update_traces(marker_color="#0068B5")
             st.plotly_chart(fig_attr, use_container_width=True)
-
-            st.dataframe(
-                attr_chart[["Ticker", "P&L", "Aporte sobre capital inicial (%)"]],
-                hide_index=True,
-                use_container_width=True,
-            )
         else:
             st.info("No hay atribución disponible para este período.")
-
-        st.subheader("Tenencia actual")
-        holdings = result["holdings"].copy()
-        holdings["Peso actual"] = holdings["Peso actual"] * 100
-        st.dataframe(holdings, hide_index=True, use_container_width=True)
 
         st.subheader("Descargas")
         export_series = pd.DataFrame({
@@ -896,6 +1074,8 @@ if page == "Calculadora por cliente":
             mime="text/csv",
         )
 
+        render_rebalances_section()
+
     except Exception as e:
         st.error(f"No se pudo calcular la cartera: {e}")
 
@@ -915,14 +1095,8 @@ if page == "Fun":
             ["Pack equal weight"],
         )
 
-        amount_fun = st.number_input(
-            "Capital base (USD)",
-            min_value=100.0,
-            value=10000.0,
-            step=1000.0,
-            format="%.0f",
-            key="fun_amount",
-        )
+        amount_fun_text = st.text_input("Capital base (USD)", value="10000", key="fun_amount")
+        amount_fun = parse_number(amount_fun_text, 10000.0)
 
         start_fun = st.date_input(
             "Fecha de inicio",
@@ -940,15 +1114,8 @@ if page == "Fun":
 
         benchmark_fun = st.text_input("Benchmark Fun", value="SPY").upper().strip()
 
-        rf_fun = st.number_input(
-            "Tasa libre de riesgo anual",
-            min_value=0.0,
-            max_value=0.30,
-            value=0.0,
-            step=0.005,
-            format="%.3f",
-            key="fun_rf",
-        )
+        rf_fun_text = st.text_input("Tasa libre de riesgo anual", value="0.000", key="fun_rf")
+        rf_fun = max(0.0, parse_number(rf_fun_text, 0.0))
 
         adjusted_fun = st.checkbox(
             "Usar precios ajustados",
@@ -1023,6 +1190,7 @@ if page == "Fun":
             labels={"value": "Índice base 100", "index": "Fecha", "variable": "Serie"},
         )
         fig = style_plotly(fig)
+        fig.update_layout(title_text="")
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Métricas comparativas")
@@ -1034,7 +1202,9 @@ if page == "Fun":
             },
             rf_annual=float(rf_fun),
         )
-        st.dataframe(format_comparison_table(comparison), hide_index=True, use_container_width=True)
+        render_html_table(format_comparison_table(comparison), numeric_cols=[
+            "Retorno acumulado", "Retorno anualizado", "Volatilidad anualizada", "Sharpe", "Máx. drawdown", "Valor final"
+        ])
 
         st.subheader("Universo acumulado por rebalanceo")
         rows = []
@@ -1045,12 +1215,19 @@ if page == "Fun":
                 "Cantidad de acciones": len(r["weights"]),
                 "Universo": ", ".join(r["weights"].keys()),
             })
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        render_html_table(pd.DataFrame(rows))
 
         st.subheader("Tenencia actual equal weight")
         holdings = ew_result["holdings"].copy()
-        holdings["Peso actual"] = holdings["Peso actual"] * 100
-        st.dataframe(holdings, hide_index=True, use_container_width=True)
+        holdings_display = holdings.copy()
+        if "Unidades estimadas" in holdings_display.columns:
+            holdings_display["Unidades estimadas"] = holdings_display["Unidades estimadas"].map(lambda x: fmt_num(x, 4))
+        elif "Acciones" in holdings_display.columns:
+            holdings_display["Acciones"] = holdings_display["Acciones"].map(lambda x: fmt_num(x, 4))
+        holdings_display["Precio"] = holdings_display["Precio"].map(lambda x: fmt_num(x, 2))
+        holdings_display["Valor"] = holdings_display["Valor"].map(lambda x: fmt_usd(x))
+        holdings_display["Peso actual"] = holdings_display["Peso actual"].map(lambda x: fmt_pct(x, 2))
+        render_html_table(holdings_display, numeric_cols=[c for c in holdings_display.columns if c != "Ticker"])
 
         st.subheader("Descargas")
         export_fun = pd.DataFrame({
@@ -1065,6 +1242,8 @@ if page == "Fun":
             file_name="quant_selection_fun_equal_weight.csv",
             mime="text/csv",
         )
+
+        render_rebalances_section()
 
     except Exception as e:
         st.error(f"No se pudo calcular la sección Fun: {e}")

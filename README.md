@@ -110,3 +110,15 @@ Corrección metodológica:
 - Con precios crudos, el resultado es equivalente al método por cantidad de acciones.
 - Con precios ajustados, el resultado es una aproximación más consistente de total return.
 - La opción de precios ajustados queda desactivada por defecto para que el resultado sea comparable con Excel de precios de cierre.
+
+
+## v1.6 – Pulido final de UI
+
+Cambios:
+- Rebalanceos cargados se movieron al final y se muestran como matriz por trimestre con ticker y ponderación.
+- Las tablas principales se renderizan como HTML de fondo blanco para evitar modo oscuro.
+- Métricas y Tenencia actual se muestran lado a lado.
+- Se elimina la tabla debajo del gráfico de Atribución por acción.
+- Se elimina el texto `undefined` de gráficos al forzar título vacío.
+- Inputs de monto y tasa pasan a texto numérico para evitar botones +/-.
+- Se mantiene el motor por retornos de v1.5.
