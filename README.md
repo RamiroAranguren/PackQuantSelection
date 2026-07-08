@@ -92,3 +92,11 @@ Cambios:
 - Cards de métricas con formato de USD compacto para evitar truncamientos.
 - Mejor contraste general, bordes suaves y sombras más consistentes.
 - Se mantiene toda la lógica de cálculo de v1.3.
+
+
+## v1.4.1 – Hotfix Plotly Bar
+
+Corrección:
+- `style_plotly()` ahora aplica `line=dict(width=2.4)` solo a trazas `scatter`.
+- Esto evita el error de Plotly cuando el gráfico es de barras: `Invalid property specified for object of type plotly.graph_objs.Bar: 'line'`.
+- Se mantiene el fix visual de v1.4.

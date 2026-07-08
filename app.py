@@ -321,7 +321,9 @@ def style_plotly(fig):
         title_font=dict(color="#334155"),
         zeroline=False,
     )
-    fig.update_traces(line=dict(width=2.4))
+    # Solo las series tipo línea (scatter) aceptan la propiedad `line`.
+    # Las barras no la aceptan y rompen con: Invalid property for Bar: 'line'.
+    fig.update_traces(line=dict(width=2.4), selector=dict(type="scatter"))
     return fig
 
 # ============================================================
