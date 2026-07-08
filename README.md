@@ -122,3 +122,11 @@ Cambios:
 - Se elimina el texto `undefined` de gráficos al forzar título vacío.
 - Inputs de monto y tasa pasan a texto numérico para evitar botones +/-.
 - Se mantiene el motor por retornos de v1.5.
+
+
+## v1.7 – Rebalance table design
+
+Cambio visual:
+- La tabla de rebalanceos se rediseñó para integrarse con el resto de la app.
+- Se reemplazó el estilo tipo Excel/celeste por un estilo institucional: headers navy/blue, fondo blanco, bordes suaves, hover sutil y tipografía coherente.
+- Se agrega una breve nota metodológica sobre composición objetivo y cantidades fijas entre rebalanceos.

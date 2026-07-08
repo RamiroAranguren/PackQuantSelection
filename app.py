@@ -302,55 +302,101 @@ hr {
     font-variant-numeric: tabular-nums;
 }
 
-/* Tabla de rebalanceos estilo matriz */
+/* Tabla de rebalanceos integrada al diseño institucional */
 .rebalance-wrap {
     margin-top: 22px;
 }
 
 .rebalance-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     background: #FFFFFF;
-    color: #071A33;
+    color: #162033;
     font-size: 0.88rem;
-    border: 1px solid #0C4A67;
-    box-shadow: 0 8px 24px rgba(9, 32, 68, 0.06);
+    border: 1px solid #D8E1EE;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(9, 32, 68, 0.07);
 }
 
 .rebalance-table th.quarter {
-    background: #0B4B63;
+    background: linear-gradient(135deg, #071A33 0%, #0D2747 62%, #0068B5 100%);
     color: #FFFFFF;
     text-align: center;
     font-weight: 800;
-    padding: 7px 6px;
-    border: 1px solid #07384B;
+    padding: 10px 8px 8px 8px;
+    border-right: 1px solid rgba(255,255,255,0.16);
+    letter-spacing: -0.01em;
+}
+
+.rebalance-table th.quarter:last-child {
+    border-right: 0;
 }
 
 .rebalance-table th.sub {
-    background: #DFF4FF;
-    color: #071A33;
+    background: #F3F7FC;
+    color: #334155;
     text-align: center;
-    font-weight: 700;
-    padding: 6px;
-    border: 1px solid #8BC9DF;
+    font-weight: 750;
+    padding: 8px 7px;
+    border-right: 1px solid #D8E1EE;
+    border-bottom: 1px solid #D8E1EE;
+    font-size: 0.80rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.rebalance-table th.sub:nth-child(2n) {
+    border-right: 1px solid #C9D5E6;
 }
 
 .rebalance-table td {
-    padding: 6px 8px;
-    border: 1px solid #8BC9DF;
+    padding: 8px 8px;
+    border-right: 1px solid #E8EEF7;
+    border-bottom: 1px solid #E8EEF7;
     text-align: center;
-}
-
-.rebalance-table tbody tr:nth-child(odd) td {
-    background: #BFE9FA;
+    background: #FFFFFF;
+    font-variant-numeric: tabular-nums;
 }
 
 .rebalance-table tbody tr:nth-child(even) td {
-    background: #E8F8FF;
+    background: #FAFCFF;
+}
+
+.rebalance-table tbody tr:hover td {
+    background: #F3F8FE;
+}
+
+.rebalance-table td:nth-child(2n) {
+    border-right: 1px solid #D8E1EE;
+    color: #334155;
+}
+
+.rebalance-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.rebalance-table td:last-child,
+.rebalance-table th:last-child {
+    border-right: 0;
 }
 
 .rebalance-table .ticker {
-    font-weight: 650;
+    font-weight: 750;
+    color: #071A33;
+}
+
+.rebalance-table .dash {
+    color: #9AA7B8;
+    font-weight: 500;
+}
+
+.rebalance-caption {
+    color: #6B7280;
+    font-size: 0.86rem;
+    margin-top: -8px;
+    margin-bottom: 10px;
 }
 
 /* Refuerzo de modo claro para elementos de tablas nativas */
@@ -483,7 +529,9 @@ def render_html_table(df, numeric_cols=None):
 
 def rebalance_matrix_html(rebalances):
     max_rows = max(len(r["weights"]) for r in rebalances)
-    html = ['<div class="rebalance-wrap"><div class="white-table-wrap"><table class="rebalance-table">']
+    html = ['<div class="rebalance-wrap">']
+    html.append('<div class="rebalance-caption">Composición objetivo definida al inicio de cada período. Entre rebalanceos, las cantidades permanecen fijas.</div>')
+    html.append('<table class="rebalance-table">')
     html.append("<thead><tr>")
     for r in rebalances:
         html.append(f'<th class="quarter" colspan="2">{r["name"]} · {r["start"]}</th>')
@@ -501,9 +549,9 @@ def rebalance_matrix_html(rebalances):
                 pct = f"{w*100:.1f}%".replace(".", ",")
                 html.append(f'<td class="ticker">{t}</td><td>{pct}</td>')
             else:
-                html.append("<td>-</td><td>-</td>")
+                html.append('<td class="dash">-</td><td class="dash">-</td>')
         html.append("</tr>")
-    html.append("</tbody></table></div></div>")
+    html.append("</tbody></table></div>")
     return "".join(html)
 
 def render_rebalances_section():
