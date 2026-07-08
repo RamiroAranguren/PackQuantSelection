@@ -130,3 +130,19 @@ Cambio visual:
 - La tabla de rebalanceos se rediseñó para integrarse con el resto de la app.
 - Se reemplazó el estilo tipo Excel/celeste por un estilo institucional: headers navy/blue, fondo blanco, bordes suaves, hover sutil y tipografía coherente.
 - Se agrega una breve nota metodológica sobre composición objetivo y cantidades fijas entre rebalanceos.
+
+
+## v1.8 – Nuevas estrategias Fun
+
+Se agregan dos estrategias en la sección **Fun**:
+
+### Pack equal weight por trimestre
+- En cada rebalanceo usa solo los tickers del pack real de ese trimestre.
+- Los pondera en partes iguales.
+- Sirve para aislar la selección de acciones de la decisión de ponderaciones.
+- Entre rebalanceos, las cantidades permanecen fijas.
+
+### Pack lagueado
+- En cada rebalanceo invierte con la composición del trimestre anterior.
+- El análisis comienza el 8/4/2025 porque necesita una cartera previa.
+- Sirve para evaluar si las ideas del pack funcionaban mejor o peor con un trimestre de demora.
