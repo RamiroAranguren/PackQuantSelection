@@ -82,3 +82,13 @@ Cambios:
 5. Start command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
 
 Netlify no es la opción recomendada para esta versión porque Streamlit necesita un proceso Python persistente y conexión WebSocket.
+
+
+## v1.4 – Fix visual / contraste
+
+Cambios:
+- Gráficos Plotly forzados a tema claro (`plotly_white`) para evitar fondos negros.
+- Inputs del sidebar con fondo blanco y texto oscuro.
+- Cards de métricas con formato de USD compacto para evitar truncamientos.
+- Mejor contraste general, bordes suaves y sombras más consistentes.
+- Se mantiene toda la lógica de cálculo de v1.3.

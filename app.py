@@ -6,6 +6,8 @@ import streamlit as st
 import yfinance as yf
 from datetime import date
 
+px.defaults.template = "plotly_white"
+
 
 st.set_page_config(
     page_title="Quant Selection – Calculadora",
@@ -167,6 +169,92 @@ hr {
     color: var(--muted);
     font-size: 0.88rem;
 }
+
+/* Inputs legibles en sidebar oscuro */
+[data-testid="stSidebar"] .stNumberInput input,
+[data-testid="stSidebar"] .stDateInput input,
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] input {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    -webkit-text-fill-color: #0F172A !important;
+    border: 1px solid rgba(216,225,238,0.95) !important;
+    border-radius: 10px !important;
+    caret-color: #0068B5 !important;
+}
+
+[data-testid="stSidebar"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-baseweb="base-input"],
+[data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border-radius: 10px !important;
+}
+
+[data-testid="stSidebar"] [data-baseweb="input"] *,
+[data-testid="stSidebar"] [data-baseweb="base-input"] *,
+[data-testid="stSidebar"] [data-baseweb="select"] * {
+    color: #0F172A !important;
+    -webkit-text-fill-color: #0F172A !important;
+}
+
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown p {
+    color: #F8FAFC !important;
+}
+
+[data-testid="stSidebar"] .stCheckbox label span {
+    color: #F8FAFC !important;
+}
+
+/* Plotly claro, aunque el browser / Streamlit intente usar dark mode */
+.js-plotly-plot,
+.plot-container,
+.svg-container {
+    background: #FFFFFF !important;
+}
+
+[data-testid="stPlotlyChart"] {
+    background: #FFFFFF !important;
+    border: 1px solid #D8E1EE;
+    border-radius: 16px;
+    padding: 10px;
+    box-shadow: 0 8px 24px rgba(9, 32, 68, 0.07);
+}
+
+/* Cards más prolijas y sin truncamiento agresivo */
+[data-testid="stMetric"] {
+    min-height: 118px;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 1.65rem !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 0.92rem !important;
+}
+
+/* Alertas menos saturadas */
+[data-testid="stAlert"] {
+    border-radius: 14px;
+}
+
+/* Tablas */
+[data-testid="stDataFrame"] {
+    border: 1px solid #D8E1EE;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+/* Compactar el bloque superior en pantallas chicas */
+@media (max-width: 1100px) {
+    .balanz-title { font-size: 1.55rem; }
+    [data-testid="stMetricValue"] { font-size: 1.35rem !important; }
+}
+
 </style>
 """
 
@@ -188,7 +276,53 @@ def render_brand_header(title: str, subtitle: str, badges=None):
         unsafe_allow_html=True,
     )
 
+
 apply_style()
+
+def fmt_usd(value: float) -> str:
+    """Formato compacto para cards de métricas, evitando truncamiento visual."""
+    value = float(value)
+    if abs(value) >= 1_000_000:
+        return f"USD {value/1_000_000:,.2f}M"
+    if abs(value) >= 100_000:
+        return f"USD {value/1_000:,.1f}K"
+    return f"USD {value:,.0f}"
+
+def style_plotly(fig):
+    """Estilo claro/institucional para evitar fondos oscuros por default theme."""
+    fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(color="#162033", size=13),
+        title=dict(font=dict(color="#071A33", size=20)),
+        legend=dict(
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#D8E1EE",
+            borderwidth=1,
+            font=dict(color="#162033"),
+        ),
+        margin=dict(l=44, r=30, t=55, b=45),
+        hovermode="x unified",
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="#E8EEF7",
+        linecolor="#C7D3E3",
+        tickfont=dict(color="#334155"),
+        title_font=dict(color="#334155"),
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="#E8EEF7",
+        linecolor="#C7D3E3",
+        tickfont=dict(color="#334155"),
+        title_font=dict(color="#334155"),
+        zeroline=False,
+    )
+    fig.update_traces(line=dict(width=2.4))
+    return fig
 
 # ============================================================
 # Configuración del pack
@@ -596,7 +730,7 @@ if page == "Calculadora por cliente":
     with st.sidebar:
         st.header("Parámetros")
 
-        amount = st.number_input("Monto invertido (USD)", min_value=100.0, value=10000.0, step=1000.0)
+        amount = st.number_input("Monto invertido (USD)", min_value=100.0, value=10000.0, step=1000.0, format="%.0f")
         entry = st.date_input("Fecha de entrada", value=date(2026, 1, 5), min_value=date(2025, 1, 8))
         valuation = st.date_input("Fecha de valuación", value=date.today(), min_value=date(2025, 1, 8))
         benchmark = st.text_input("Benchmark", value="SPY").upper().strip()
@@ -653,10 +787,10 @@ if page == "Calculadora por cliente":
         pack_return = pack_series.iloc[-1] / pack_series.iloc[0] - 1
         bench_return = bench_series.iloc[-1] / bench_series.iloc[0] - 1
 
-        col1.metric("Valor actual pack", f"USD {pack_series.iloc[-1]:,.2f}", f"{pack_return*100:.2f}%")
-        col2.metric(f"Valor {benchmark}", f"USD {bench_series.iloc[-1]:,.2f}", f"{bench_return*100:.2f}%")
+        col1.metric("Valor actual pack", fmt_usd(pack_series.iloc[-1]), f"{pack_return*100:.2f}%")
+        col2.metric(f"Valor {benchmark}", fmt_usd(bench_series.iloc[-1]), f"{bench_return*100:.2f}%")
         col3.metric("Diferencia vs benchmark", f"{(pack_return-bench_return)*100:.2f} pp")
-        col4.metric("Monto inicial", f"USD {amount:,.2f}")
+        col4.metric("Monto inicial", fmt_usd(amount))
 
         st.subheader("Evolución base 100")
         plot_df = pd.DataFrame({
@@ -669,6 +803,7 @@ if page == "Calculadora por cliente":
             y=plot_df.columns,
             labels={"value": "Índice base 100", "index": "Fecha", "variable": "Serie"},
         )
+        fig = style_plotly(fig)
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Métricas")
@@ -686,6 +821,8 @@ if page == "Calculadora por cliente":
                 y="Aporte sobre capital inicial (%)",
                 labels={"Aporte sobre capital inicial (%)": "Aporte (pp)"},
             )
+            fig_attr = style_plotly(fig_attr)
+            fig_attr.update_traces(marker_color="#0068B5")
             st.plotly_chart(fig_attr, use_container_width=True)
 
             st.dataframe(
@@ -746,6 +883,7 @@ if page == "Fun":
             min_value=100.0,
             value=10000.0,
             step=1000.0,
+            format="%.0f",
             key="fun_amount",
         )
 
@@ -831,9 +969,9 @@ if page == "Fun":
         real_ret = real_series.iloc[-1] / real_series.iloc[0] - 1
         bench_ret = bench_series.iloc[-1] / bench_series.iloc[0] - 1
 
-        col1.metric("Equal weight", f"USD {ew_series.iloc[-1]:,.2f}", f"{ew_ret*100:.2f}%")
-        col2.metric("Pack real", f"USD {real_series.iloc[-1]:,.2f}", f"{real_ret*100:.2f}%")
-        col3.metric(benchmark_fun, f"USD {bench_series.iloc[-1]:,.2f}", f"{bench_ret*100:.2f}%")
+        col1.metric("Equal weight", fmt_usd(ew_series.iloc[-1]), f"{ew_ret*100:.2f}%")
+        col2.metric("Pack real", fmt_usd(real_series.iloc[-1]), f"{real_ret*100:.2f}%")
+        col3.metric(benchmark_fun, fmt_usd(bench_series.iloc[-1]), f"{bench_ret*100:.2f}%")
 
         st.subheader("Evolución base 100")
         comp_df = pd.DataFrame({
@@ -847,6 +985,7 @@ if page == "Fun":
             y=comp_df.columns,
             labels={"value": "Índice base 100", "index": "Fecha", "variable": "Serie"},
         )
+        fig = style_plotly(fig)
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Métricas comparativas")
